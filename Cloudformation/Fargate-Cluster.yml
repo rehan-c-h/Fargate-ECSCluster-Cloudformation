@@ -8,6 +8,74 @@ Parameters:
     Type: Number
   ImageURI:
     Type: String
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Default: wallboard2
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the ECS instances.
+
+  LatestAmiId:
+    Description: Region specific image from the Parameter Store
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: '/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2'
+
+  InstanceType:
+    Description: EC2 instance type
+    Type: String
+    Default: t2.micro
+    AllowedValues:
+    - t2.micro
+    - t2.small
+    - t2.medium
+    - t2.large
+    - m3.medium
+    - m3.large
+    - m3.xlarge
+    - m3.2xlarge
+    - m4.large
+    - m4.xlarge
+    - m4.2xlarge
+    - m4.4xlarge
+    - m4.10xlarge
+    - c4.large
+    - c4.xlarge
+    - c4.2xlarge
+    - c4.4xlarge
+    - c4.8xlarge
+    - c3.large
+    - c3.xlarge
+    - c3.2xlarge
+    - c3.4xlarge
+    - c3.8xlarge
+    - r3.large
+    - r3.xlarge
+    - r3.2xlarge
+    - r3.4xlarge
+    - r3.8xlarge
+    - i2.xlarge
+    - i2.2xlarge
+    - i2.4xlarge
+    - i2.8xlarge
+    ConstraintDescription: Please choose a valid instance type.
+  Mappings:
+  AWSRegionToAMI:
+    us-east-1:
+      AMIID: ami-09bee01cc997a78a6
+    us-east-2:
+      AMIID: ami-0a9e12068cb98a01d
+    us-west-1:
+      AMIID: ami-0fa6c8d131a220017
+    us-west-2:
+      AMIID: ami-078c97cf1cefd1b38
+    eu-west-1:
+      AMIID: ami-0c9ef930279337028
+    eu-central-1:
+      AMIID: ami-065c1e34da68f2b02
+    ap-northeast-1:
+      AMIID: ami-02265963d1614d04d
+    ap-southeast-1:
+      AMIID: ami-0b68661b29b9e058c
+    ap-southeast-2:
+      AMIID: ami-00e4b147599c13588
 
 Resources:
 
@@ -21,7 +89,7 @@ Resources:
   VPC:
     Type: AWS::EC2::VPC
     Properties: 
-      CidrBlock: 172.10.0.0/16
+      CidrBlock: 10.0.0.0/16
       EnableDnsHostnames: True
       EnableDnsSupport: True
 
@@ -29,7 +97,7 @@ Resources:
   SubnetA:
     Type: AWS::EC2::Subnet
     Properties:
-      CidrBlock: 172.10.1.0/24
+      CidrBlock: 10.0.0.0/24
       VpcId: !Ref VPC
       AvailabilityZone: !Join ['', [!Ref "AWS::Region", 'a']]
 
@@ -37,49 +105,9 @@ Resources:
   SubnetB:
     Type: AWS::EC2::Subnet
     Properties:
-      CidrBlock: 172.10.2.0/24
+      CidrBlock: 10.0.1.0/24
       VpcId: !Ref VPC
       AvailabilityZone: !Join ['', [!Ref "AWS::Region", 'b']]
-
-  # Create a route table to allow access to internet
-  PublicRouteTable:
-    Type: AWS::EC2::RouteTable
-    Properties:
-      VpcId: !Ref VPC
-
-  # Create a Route to allow access to internet using an internet gateway
-  PublicRoute:
-    Type: AWS::EC2::Route
-    DependsOn: VPCInternetGatewayAttachment
-    Properties:
-      RouteTableId: !Ref PublicRouteTable
-      DestinationCidrBlock: 0.0.0.0/0
-      GatewayId: !Ref InternetGateway
-
-  # Attach Public Route to SubnetA
-  SubnetAPublicRouteAssociation:
-    Type: AWS::EC2::SubnetRouteTableAssociation
-    Properties: 
-      RouteTableId: !Ref PublicRouteTable
-      SubnetId: !Ref SubnetA
-
-  # Attach Public Route to SubnetB
-  SubnetBPublicRouteAssociation:
-    Type: AWS::EC2::SubnetRouteTableAssociation
-    Properties: 
-      RouteTableId: !Ref PublicRouteTable
-      SubnetId: !Ref SubnetB
-
-  # Create an Internet Gateway
-  InternetGateway:
-    Type: AWS::EC2::InternetGateway
-
-  # Attach the internet gateway to the VPC
-  VPCInternetGatewayAttachment:
-    Type: AWS::EC2::VPCGatewayAttachment
-    Properties: 
-      InternetGatewayId: !Ref InternetGateway
-      VpcId: !Ref VPC
 
   # Create Access Role for ECS-Tasks
   ExecutionRole:
@@ -98,99 +126,83 @@ Resources:
   # Create a TaskDefinition with container details
   TaskDefinition:
     Type: AWS::ECS::TaskDefinition
-    Properties: 
-      Memory: 1024
-      Cpu: 512
+    Properties:
       NetworkMode: awsvpc
       RequiresCompatibilities:
-        - 'FARGATE'
+        - 'EC2'
       TaskRoleArn: !Ref ExecutionRole
       ExecutionRoleArn: !Ref ExecutionRole
       ContainerDefinitions:
         - Name: !Join ['-', [!Ref Stage, !Ref 'AWS::AccountId', 'Container']]
           Image: !Ref ImageURI
+          Cpu: 1024
+          Memory: 1024
           PortMappings:
             - ContainerPort: !Ref ContainerPort
               HostPort: !Ref ContainerPort
 
-  # Creat a security group for load balancer and open port 80 in bound from internet
-  LoadBalancerSecurityGroup:
-    Type: AWS::EC2::SecurityGroup
-    Properties:
-      GroupDescription: !Join ['-', [!Ref Stage, !Ref 'AWS::AccountId', 'LoadBalancerSecurityGroup']]
-      VpcId: !Ref VPC
-      SecurityGroupIngress:
-        - IpProtocol: tcp
-          FromPort: 80
-          ToPort: 80
-          CidrIp: 0.0.0.0/0
-
-  # Creat a security group for Containers and open in bound Container port from Load balancer security group to the Container 
-  ContainerSecurityGroup:
-    Type: AWS::EC2::SecurityGroup
-    Properties:
-      GroupDescription: !Join ['-', [!Ref Stage, !Ref 'AWS::AccountId', 'ContainerSecurityGroup']]
-      VpcId: !Ref VPC
-      SecurityGroupIngress:
-        - IpProtocol: tcp
-          FromPort: !Ref ContainerPort
-          ToPort: !Ref ContainerPort
-          SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup
-
-  # Create a LoadBalancer and attach the Security group and Subnets
-  LoadBalancer:
-    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
-    Properties: 
-      IpAddressType: ipv4
-      Name: !Join ['-', [!Ref Stage, !Ref 'AWS::AccountId', 'LoadBalancer']]
-      Scheme: internet-facing
-      SecurityGroups:
-        - !Ref LoadBalancerSecurityGroup
-      Subnets: 
-        - !Ref SubnetA
-        - !Ref SubnetB
-      Type: application
-
-  # Create a TargetGroup for HTTP port 80
-  TargetGroup:
-    Type: AWS::ElasticLoadBalancingV2::TargetGroup
-    Properties:
-      Name: !Join ['-', [!Ref Stage, !Ref 'AWS::AccountId', 'TargetGroup']]
-      Port: 80
-      Protocol: HTTP
-      TargetType: ip
-      VpcId: !Ref VPC
-
-  # Create a LoadBalancerListener and attach the TargetGroup and LoadBalancer
-  LoadBalancerListener:
-    Type: AWS::ElasticLoadBalancingV2::Listener
-    Properties:
-      DefaultActions: 
-        - TargetGroupArn: !Ref TargetGroup
-          Type: forward
-      LoadBalancerArn: !Ref LoadBalancer
-      Port: 80
-      Protocol: HTTP
-
   # Create an ECS Service and add created Cluster, TaskDefintion, Subnets, TargetGroup and SecurityGroup
   ECSService:
     Type: AWS::ECS::Service
-    DependsOn: LoadBalancerListener
     Properties:
       ServiceName: !Join ['-', [!Ref Stage, !Ref 'AWS::AccountId', 'ECSService']]
       Cluster: !Ref Cluster
       TaskDefinition: !Ref TaskDefinition
-      DesiredCount: 2
-      LaunchType: FARGATE
+      DesiredCount: 1
+      LaunchType: EC2
       NetworkConfiguration: 
         AwsvpcConfiguration:
-          AssignPublicIp: ENABLED
           Subnets:
             - !Ref SubnetA
             - !Ref SubnetB
-          SecurityGroups:
-            - !Ref ContainerSecurityGroup
-      LoadBalancers:
-        - ContainerName: !Join ['-', [!Ref Stage, !Ref 'AWS::AccountId', 'Container']]
-          ContainerPort: !Ref ContainerPort
-          TargetGroupArn: !Ref TargetGroup
+
+    
+  myLaunchConfig: 
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties: 
+      IamInstanceProfile: !Ref EC2InstanceProfile
+      ImageId: !FindInMap 
+        - AWSRegionToAMI
+        - !Ref 'AWS::Region'
+        - AMIID
+      InstanceMonitoring: false
+      InstanceType: !Ref InstanceType
+      KeyName: !Ref KeyName
+      LaunchConfigurationName: ec2Congiguration
+      
+  EC2Role:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      Policies:
+        - PolicyName: ecs-service
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'ecs:CreateCluster'
+                  - 'ecs:DeregisterContainerInstance'
+                  - 'ecs:DiscoverPollEndpoint'
+                  - 'ecs:Poll'
+                  - 'ecs:RegisterContainerInstance'
+                  - 'ecs:StartTelemetrySession'
+                  - 'ecs:Submit*'
+                  - 'logs:CreateLogStream'
+                  - 'logs:PutLogEvents'
+                Resource: '*'
+  
+  EC2InstanceProfile:
+    Type: 'AWS::IAM::InstanceProfile'
+    Properties:
+      Path: /
+      Roles:
+        - !Ref EC2Role
+      
