@@ -12,6 +12,16 @@ Parameters:
     Type: 'AWS::EC2::KeyPair::KeyName'
     Default: wallboard2
     Description: Name of an existing EC2 KeyPair to enable SSH access to the ECS instances.
+  
+  MaxSize:
+    Type: Number
+    Default: '1'
+    Description: Maximum number of instances that can be launched
+  
+  DesiredCapacity:
+    Type: Number
+    Default: '1'
+    Description: Number of instances to launch in your ECS cluster.
 
   InstanceType:
     Description: EC2 instance type
@@ -135,10 +145,28 @@ Resources:
           PortMappings:
             - ContainerPort: !Ref ContainerPort
               HostPort: !Ref ContainerPort
+  
+  ECSAutoScalingGroup:
+    Type: 'AWS::AutoScaling::AutoScalingGroup'
+    Properties:
+      VPCZoneIdentifier: 
+        - !Ref SubnetA
+        - !Ref SubnetB
+      LaunchConfigurationName: !Ref ContainerInstances
+      MinSize: '1'
+      MaxSize: !Ref MaxSize
+      DesiredCapacity: !Ref DesiredCapacity
+    CreationPolicy:
+      ResourceSignal:
+        Timeout: PT15M
+    UpdatePolicy:
+      AutoScalingReplacingUpdate:
+        WillReplace: 'true'
 
   # Create an ECS Service and add created Cluster, TaskDefintion, Subnets, TargetGroup and SecurityGroup
   ECSService:
     Type: AWS::ECS::Service
+    DependsOn: ECSAutoScalingGroup
     Properties:
       ServiceName: !Join ['-', [!Ref Stage, !Ref 'AWS::AccountId', 'ECSService']]
       Cluster: !Ref Cluster
@@ -150,9 +178,11 @@ Resources:
           Subnets:
             - !Ref SubnetA
             - !Ref SubnetB
+  
+  
 
     
-  myLaunchConfig: 
+  ContainerInstances: 
     Type: AWS::AutoScaling::LaunchConfiguration
     Properties: 
       IamInstanceProfile: !Ref EC2InstanceProfile
