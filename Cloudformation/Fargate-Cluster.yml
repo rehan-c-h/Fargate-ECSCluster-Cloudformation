@@ -9,14 +9,9 @@ Parameters:
   ImageURI:
     Type: String
   KeyName:
-    Type: AWS::EC2::KeyPair::KeyName
+    Type: 'AWS::EC2::KeyPair::KeyName'
     Default: wallboard2
     Description: Name of an existing EC2 KeyPair to enable SSH access to the ECS instances.
-
-  LatestAmiId:
-    Description: Region specific image from the Parameter Store
-    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
-    Default: '/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2'
 
   InstanceType:
     Description: EC2 instance type
@@ -56,7 +51,7 @@ Parameters:
     - i2.4xlarge
     - i2.8xlarge
     ConstraintDescription: Please choose a valid instance type.
-  Mappings:
+Mappings:
   AWSRegionToAMI:
     us-east-1:
       AMIID: ami-09bee01cc997a78a6
